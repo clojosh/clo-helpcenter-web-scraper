@@ -1,0 +1,14 @@
+openai
+questionary
+tqdm
+shortuuid
+requests
+azure-core
+azure-identity
+azure-search-documents
+python-dotenv
+tenacity
+PyMuPDF
+tiktoken
+pyppeteer
+requests-html
