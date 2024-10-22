@@ -151,7 +151,7 @@ class OpenAIHelper:
             ]
 
             chat_completion = self.openai_client.chat.completions.create(
-                model=self.AZURE_OPENAI_CHATGPT_DEPLOYMENT, messages=messages, temperature=0, max_tokens=1500, n=1
+                model=self.AZURE_OPENAI_CHATGPT_DEPLOYMENT, messages=messages, temperature=0, max_tokens=5000, n=1
             )
 
             outline = chat_completion.choices[0].message.content

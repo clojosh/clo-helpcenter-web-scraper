@@ -11,4 +11,5 @@ tenacity
 PyMuPDF
 tiktoken
 pyppeteer
-requests-html
+requests-html # Change chromium version from here: https://stackoverflow.com/questions/78023508/python-request-html-is-not-downloading-chromium
+lxml-html-clean

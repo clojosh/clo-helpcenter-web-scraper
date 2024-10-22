@@ -30,7 +30,7 @@ class WebScraper:
         self.language = environment.language
         self.search_client = environment.search_client
         self.openai_helper = environment.openai_helper
-        self.web_scraper_path = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+        self.web_scraper_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites")
 
     @staticmethod
     def reduce_tokens(scraped_content: str):
@@ -264,7 +264,7 @@ class WebScraper:
                 f.write("<html>\n" + content.prettify() + "\n" + "</html>")
 
     @staticmethod
-    def generate_navigation_outline_html_openai(env: Environment, brand: str, web_scraper_path: str, page: str):
+    def generate_navigation_outline_html_openai(env: Environment, brand: str, scraped_html_path: str, page: str):
         """
         Navigates and outlines a webpage using OpenAI's API.
         Args:
@@ -278,13 +278,13 @@ class WebScraper:
         environment = Environment(env, brand)
 
         print("Creating Navigation for " + page)
-        with open(os.path.join(web_scraper_path, "clo3d.com", "scraped_html", page), "r", encoding="utf-8") as f:
+        with open(os.path.join(scraped_html_path, "clo3d.com", "scraped_html", page), "r", encoding="utf-8") as f:
             scraped_content = WebScraper.reduce_tokens(f.read())
 
             url = "https://clo3d.com/" + page.replace(".html", "").replace("_", "/").replace("/userType", "?userType")
             navigate = environment.openai_helper.scrape_webpage(scraped_content, url)
             outline = environment.openai_helper.outline_webpage(scraped_content, url)
-            with open(os.path.join(web_scraper_path, "clo3d.com", "openai_html", page.replace(".html", ".txt")), "w+", encoding="utf-8") as f:
+            with open(os.path.join(scraped_html_path, "clo3d.com", "openai_html", page.replace(".html", ".txt")), "w+", encoding="utf-8") as f:
                 # navigate = re.findall(r"\d+\.\s.*", navigate)
                 # f.write("\n".join(navigate))
                 f.write(navigate + "\n\n" + outline)
@@ -389,10 +389,11 @@ if __name__ == "__main__":
     task = questionary.select(
         "What task?",
         choices=[
-            "Scrape All Page URLs",
-            "Scrape All Pages",
-            "Scrape Page",
-            "Generate Navigation Outline",
+            "Scrape All URLs",
+            "Scrape HTML",
+            "Scrape All HTML",
+            "Generate Navigation Outline - Single Page",
+            "Generate Navigation Outline - All Pages",
             "Upload Navigation Outline Documents",
             "Delete All AI Search HTML Documents",
         ],
@@ -405,7 +406,7 @@ if __name__ == "__main__":
         with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "clo3d.com", "scraped_urls.txt"), "w+") as f:
             for url in urls:
                 f.write(url + "\n")
-    elif task == "Scrape All Pages":
+    elif task == "Scrape All HTML":
         web_scraper.scrape_all_pages()
 
         # Use pyppeteer to scrape the download page because it has dynamic content
@@ -413,10 +414,20 @@ if __name__ == "__main__":
         # Use pyppeteer to scrape the partners page because it has dynamic content
         asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/company/partners", "section", "main"))
 
-    elif task == "Scrape Page":
+    elif task == "Scrape HTML":
         url = questionary.text("URL").ask()
         web_scraper.scrape_all_pages([url])
-    elif task == "Generate Navigation Outline":
+    elif task == "Generate Navigation Outline - Single Page":
+        scraped_html_path = os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites"), "clo3d.com", "scraped_html")
+        page = questionary.select(
+            "Which HTML page?",
+            choices=os.listdir(scraped_html_path),
+        ).ask()
+
+        web_scraper.generate_navigation_outline_html_openai(
+            Environment(env, brand), brand, os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites")), page
+        )
+    elif task == "Generate Navigation Outline - All Pages":
         web_scraper.mp_generate_navigation_outline_html_openai()
     elif task == "Upload Navigation Outline Documents":
         web_scraper.mp_upload_openai_html()
