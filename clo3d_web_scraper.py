@@ -45,18 +45,13 @@ class WebScraper:
         """
         # Remove unnecessary whitespaces between tags
         scraped_content = re.sub(r">\s+<", "><", scraped_content)
+
         # Replace multiple whitespaces with a single space
         scraped_content = re.sub(r"\s{2,}", " ", scraped_content)
-        # Remove empty div tags
-        scraped_content = scraped_content.replace("<div></div>", "")
+
         # Remove leading and trailing whitespaces from tags
         scraped_content = scraped_content.replace(" <", "<")
         scraped_content = scraped_content.replace(" >", ">")
-        # Remove picture tags
-        scraped_content = scraped_content.replace("<picture>", "")
-        scraped_content = scraped_content.replace("</picture>", "")
-        # Remove target="_self" attribute from links
-        scraped_content = scraped_content.replace('target="_self"', "")
 
         return scraped_content
 
@@ -112,7 +107,7 @@ class WebScraper:
         else:
             print("Failed to retrieve the webpage")
 
-    def remove_tag_attributes(self, tag) -> Tag:
+    def remove_tag_attributes(self, tag: Tag) -> Tag:
         """
         Remove unwanted attributes from the tags in the page
 
@@ -150,6 +145,11 @@ class WebScraper:
             "cellspacing",  # Space between table cells
             "d",
             "xlink:href",
+            "aria-hidden",
+            "viewbox",
+            "for",
+            "modelvalue",
+            "target",
         ]
 
         if tag is None:
@@ -168,16 +168,41 @@ class WebScraper:
 
         return tag
 
+    def remove_unnecessary_tags(self, html: str):
+        soup = BeautifulSoup(html, "html.parser")
+
+        for div in soup.find_all("div"):
+            # Check if the div has no attributes and only contains another div
+            if div.find("div", recursive=False):
+                # Replace the current div with its content
+                div.unwrap()
+
+        for span in soup.find_all("span"):
+            # Check if the div has no attributes and only contains another span
+            if span.find("span", recursive=False):
+                # Replace the current div with its content
+                span.unwrap()
+
+        for svg in soup.find_all("svg"):
+            svg.decompose()
+
+        for img in soup.find_all("img"):
+            img.decompose()
+
+        for picture in soup.find_all("picture"):
+            picture.decompose()
+
+        return soup
+
     def format_html(self, url: str, html: str):
-        soup = (
-            str(BeautifulSoup(html, "html.parser"))
-            .replace("<!--[-->", "")
+        html = (
+            html.replace("<!--[-->", "")
             .replace("<!--]-->", "")
             .replace("<!--", "")
             .replace("-->", "")
             .replace(' href="/', ' href="https://clo3d.com/')
         )
-        soup = BeautifulSoup(soup, "html.parser")
+        soup = self.remove_unnecessary_tags(html)
 
         if url == "https://clo3d.com/en/":
             contents = self.remove_tag_attributes(soup.find("body"))
@@ -249,9 +274,13 @@ class WebScraper:
 
             print("Scraping " + url)
 
-            resp = session.get(url)
-            resp.html.render()
-            html = resp.html.html
+            try:
+                resp = session.get(url)
+                resp.html.render()
+                html = resp.html.html
+            except Exception as e:
+                print("Error scraping " + url + ": " + str(e))
+                continue
 
             content = self.format_html(url, html)
 
@@ -282,11 +311,16 @@ class WebScraper:
             scraped_content = WebScraper.reduce_tokens(f.read())
 
             url = "https://clo3d.com/" + page.replace(".html", "").replace("_", "/").replace("/userType", "?userType")
-            navigate = environment.openai_helper.scrape_webpage(scraped_content, url)
-            outline = environment.openai_helper.outline_webpage(scraped_content, url)
+
+            try:
+                navigate = environment.openai_helper.scrape_webpage(scraped_content, url)
+            except Exception as e:
+                print(e)
+
+            # outline = environment.openai_helper.outline_webpage(scraped_content, url)
+
+            outline = re.sub(r"<.*?>", "", scraped_content)
             with open(os.path.join(scraped_html_path, "clo3d.com", "openai_html", page.replace(".html", ".txt")), "w+", encoding="utf-8") as f:
-                # navigate = re.findall(r"\d+\.\s.*", navigate)
-                # f.write("\n".join(navigate))
                 f.write(navigate + "\n\n" + outline)
 
     def mp_generate_navigation_outline_html_openai(self):
@@ -295,7 +329,7 @@ class WebScraper:
         for page in os.listdir(os.path.join(self.web_scraper_path, "clo3d.com", "scraped_html")):
             navigate_html_openai_params.append((self.env, self.brand, self.web_scraper_path, page))
 
-        with multiprocessing.Pool(5) as p:
+        with multiprocessing.Pool(3) as p:
             p.starmap_async(WebScraper.generate_navigation_outline_html_openai, navigate_html_openai_params, error_callback=lambda e: print(e))
             p.close()
             p.join()
@@ -319,7 +353,12 @@ class WebScraper:
             }
 
             document_dir = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "clo3d.com", "ai_documents", env, datetime.today().strftime("%Y_%m_%d")
+                os.path.dirname(os.path.abspath(__file__)),
+                "websites",
+                "clo3d.com",
+                "ai_documents",
+                environment.env,
+                datetime.today().strftime("%Y_%m_%d"),
             )
             if not os.path.exists(document_dir):
                 os.mkdir(document_dir)
@@ -384,7 +423,7 @@ class WebScraper:
 
 
 if __name__ == "__main__":
-    env = questionary.select("Which environment?", choices=["prod", "dev"]).ask()
+    env = questionary.select("Which environment?", choices=["dev", "prod"]).ask()
     brand = questionary.select("Which brand?", choices=["clo3d", "closet", "md", "allinone"]).ask()
     task = questionary.select(
         "What task?",
@@ -415,8 +454,14 @@ if __name__ == "__main__":
         asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/company/partners", "section", "main"))
 
     elif task == "Scrape HTML":
-        url = questionary.text("URL").ask()
+        if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "clo3d.com", "scraped_urls.txt")):
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "clo3d.com", "scraped_urls.txt"), "r") as f:
+                urls = [url.strip() for url in f.readlines()]
+                url = questionary.select("Which URL?", choices=urls).ask()
+        else:
+            url = questionary.text("URL").ask()
         web_scraper.scrape_all_pages([url])
+
     elif task == "Generate Navigation Outline - Single Page":
         scraped_html_path = os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites"), "clo3d.com", "scraped_html")
         page = questionary.select(

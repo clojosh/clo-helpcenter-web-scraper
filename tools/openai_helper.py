@@ -146,12 +146,12 @@ class OpenAIHelper:
             messages = [
                 {
                     "role": "user",
-                    "content": f"Provide a detailed outline of a website based on the provided HTML code. Outline must include all text and web links whereever possible, for example: [Start Free Trial](https://clo3d.com). The outline must exclude any html tags. The url of the website is {website_url}. ###HTML Code###: {content}",
+                    "content": f"Provide a thorough outline of all content but html tags from the provided HTML code. Format web links using this example: [Start Free Trial](https://clo3d.com). The url of the website is {website_url}. ###HTML Code###: {content}",
                 }
             ]
 
             chat_completion = self.openai_client.chat.completions.create(
-                model=self.AZURE_OPENAI_CHATGPT_DEPLOYMENT, messages=messages, temperature=0, max_tokens=5000, n=1
+                model=self.AZURE_OPENAI_CHATGPT_DEPLOYMENT, messages=messages, temperature=0.7, max_tokens=5000, n=1
             )
 
             outline = chat_completion.choices[0].message.content
@@ -186,7 +186,7 @@ class OpenAIHelper:
             ]
 
             chat_completion = self.openai_client.chat.completions.create(
-                model=self.AZURE_OPENAI_CHATGPT_DEPLOYMENT, messages=messages, temperature=0, max_tokens=1500, n=1
+                model=self.AZURE_OPENAI_CHATGPT_DEPLOYMENT, messages=messages, temperature=0, max_tokens=3000, n=1
             )
 
             scraped_content = chat_completion.choices[0].message.content
