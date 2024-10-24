@@ -292,6 +292,31 @@ class WebScraper:
             with open(os.path.join(self.web_scraper_path, "clo3d.com", "scraped_html", f"{file_name}.html"), "w+", encoding="utf-8") as f:
                 f.write("<html>\n" + content.prettify() + "\n" + "</html>")
 
+    async def pyppeteer_scraper(self, url: str, tag_to_wait_for: str, tag_to_scrape: str) -> None:
+        """
+        Uses Pyppeteer to load a webpage, wait for a specific tag to be visible, and then scrape the inner HTML of that tag.
+        The scraped HTML is then formatted and saved to a file.
+
+        Args:
+            url (str): The URL of the webpage to scrape.
+            tag (str): The tag to wait for and scrape.
+        """
+
+        browser = await launch()
+
+        page = await browser.newPage()
+
+        await page.goto(url, {"waitUntil": "networkidle0"})
+
+        html = await page.content()
+        content = self.format_html(url, html)
+
+        file_name = url.replace("https://clo3d.com/", "").replace("/", "_").replace("\n", "").replace("?", "_")
+        with open(os.path.join(self.web_scraper_path, "clo3d.com", "scraped_html", f"{file_name}.html"), "w+", encoding="utf-8") as f:
+            f.write("<html>\n" + content.prettify() + "\n" + "</html>")
+
+        await browser.close()
+
     @staticmethod
     def generate_navigation_outline_html_openai(env: Environment, brand: str, scraped_html_path: str, page: str):
         """
@@ -341,7 +366,7 @@ class WebScraper:
 
         with open(openai_html_path, "r", encoding="utf-8") as f:
             content = f.read()
-            title = environment.openai_helper.create_webpage_title(content).replace('"', "").replace("*", "").replace("Title: ", "")
+            title = environment.openai_helper.create_webpage_title(content).replace('"', "").replace("*", "").replace("Title: ", "").replace("#", "")
 
             document = {
                 "@search.action": "mergeOrUpload",
@@ -382,44 +407,20 @@ class WebScraper:
             p.close()
             p.join()
 
-    def delete_all_ai_search_html_documents(self):
+    def delete_ai_search_html_documents(self):
         ai_document_path = os.path.join(self.web_scraper_path, "clo3d.com", "ai_documents", self.env)
 
-        most_recent_uploaded_folder = os.listdir(ai_document_path)[-1]
-        for folder in os.listdir(os.path.join(ai_document_path, most_recent_uploaded_folder)):
-            with open(os.path.join(ai_document_path, most_recent_uploaded_folder, folder), "r", encoding="utf-8") as f:
-                document = json.load(f)
-                document["@search.action"] = "delete"
-                self.environment.search_client.upload_documents([document])
+        # most_recent_uploaded_folder = os.listdir(ai_document_path)[-1]
+        for folder in os.listdir(ai_document_path):
+            for file in os.listdir(os.path.join(ai_document_path, folder)):
+                with open(os.path.join(ai_document_path, folder, file), "r", encoding="utf-8") as f:
+                    document = json.load(f)
+                    document["@search.action"] = "delete"
+                    self.environment.search_client.upload_documents([document])
 
     def delete_ai_search_html_document(self, article_id):
         document = {"@search.action": "delete", "ArticleId": article_id}
         self.environment.search_client.upload_documents([document])
-
-    async def pyppeteer_scraper(self, url: str, tag_to_wait_for: str, tag_to_scrape: str) -> None:
-        """
-        Uses Pyppeteer to load a webpage, wait for a specific tag to be visible, and then scrape the inner HTML of that tag.
-        The scraped HTML is then formatted and saved to a file.
-
-        Args:
-            url (str): The URL of the webpage to scrape.
-            tag (str): The tag to wait for and scrape.
-        """
-
-        browser = await launch()
-
-        page = await browser.newPage()
-
-        await page.goto(url, {"waitUntil": "networkidle0"})
-
-        html = await page.content()
-        content = self.format_html(url, html)
-
-        file_name = url.replace("https://clo3d.com/", "").replace("/", "_").replace("\n", "").replace("?", "_")
-        with open(os.path.join(self.web_scraper_path, "clo3d.com", "scraped_html", f"{file_name}.html"), "w+", encoding="utf-8") as f:
-            f.write("<html>\n" + content.prettify() + "\n" + "</html>")
-
-        await browser.close()
 
 
 if __name__ == "__main__":
@@ -434,7 +435,7 @@ if __name__ == "__main__":
             "Generate Navigation Outline - Single Page",
             "Generate Navigation Outline - All Pages",
             "Upload Navigation Outline Documents",
-            "Delete All AI Search HTML Documents",
+            "Delete AI Search HTML Documents",
         ],
     ).ask()
 
@@ -476,5 +477,5 @@ if __name__ == "__main__":
         web_scraper.mp_generate_navigation_outline_html_openai()
     elif task == "Upload Navigation Outline Documents":
         web_scraper.mp_upload_openai_html()
-    elif task == "Delete All AI Search HTML Documents":
-        web_scraper.delete_all_ai_search_html_documents()
+    elif task == "Delete AI Search HTML Documents":
+        web_scraper.delete_ai_search_html_documents()
