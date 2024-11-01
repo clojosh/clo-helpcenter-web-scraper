@@ -288,6 +288,9 @@ class WebScraper:
                 print("No contents found for " + url)
                 continue
 
+            if not os.path.exists(os.path.join(self.web_scraper_path, "clo3d.com", "scraped_html")):
+                os.makedirs(os.path.join(self.web_scraper_path, "clo3d.com", "scraped_html"))
+
             file_name = url.replace("https://clo3d.com/", "").replace("/", "_").replace("\n", "").replace("?", "_")
             with open(os.path.join(self.web_scraper_path, "clo3d.com", "scraped_html", f"{file_name}.html"), "w+", encoding="utf-8") as f:
                 f.write("<html>\n" + content.prettify() + "\n" + "</html>")
@@ -344,9 +347,12 @@ class WebScraper:
 
             # outline = environment.openai_helper.outline_webpage(scraped_content, url)
 
+            if not os.path.exists(os.path.join(scraped_html_path, "clo3d.com", "openai_html")):
+                os.makedirs(os.path.join(scraped_html_path, "clo3d.com", "openai_html"))
+
             outline = re.sub(r"<.*?>", "", scraped_content)
             with open(os.path.join(scraped_html_path, "clo3d.com", "openai_html", page.replace(".html", ".txt")), "w+", encoding="utf-8") as f:
-                f.write(navigate + "\n\n" + outline)
+                f.write(navigate + "\n\n" + outline.replace("\n", " ").strip())
 
     def mp_generate_navigation_outline_html_openai(self):
         navigate_html_openai_params = []
@@ -377,26 +383,26 @@ class WebScraper:
                 "YoutubeLinks": [],
             }
 
-            document_dir = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "websites",
-                "clo3d.com",
-                "ai_documents",
-                environment.env,
-                datetime.today().strftime("%Y_%m_%d"),
-            )
-            if not os.path.exists(document_dir):
-                os.mkdir(document_dir)
+            # document_dir = os.path.join(
+            #     os.path.dirname(os.path.abspath(__file__)),
+            #     "websites",
+            #     "clo3d.com",
+            #     "ai_documents",
+            #     environment.env,
+            #     datetime.today().strftime("%Y_%m_%d"),
+            # )
+            # if not os.path.exists(document_dir):
+            #     os.mkdir(document_dir)
 
-            with open(os.path.join(document_dir, page.replace(".txt", ".json")), "w+", encoding="utf-8") as f:
-                json.dump(document, f)
+            # with open(os.path.join(document_dir, page.replace(".txt", ".json")), "w+", encoding="utf-8") as f:
+            #     json.dump(document, f)
 
             document["TitleVector"] = environment.openai_helper.generate_embeddings(title)
             document["ContentVector"] = environment.openai_helper.generate_embeddings(content)
 
             environment.search_client.upload_documents([document])
 
-    def mp_upload_openai_html(self):
+    def mp_upload_documents(self):
         upload_openai_html_params = []
 
         for page in os.listdir(os.path.join(self.web_scraper_path, "clo3d.com", "openai_html")):
@@ -407,61 +413,73 @@ class WebScraper:
             p.close()
             p.join()
 
-    def delete_ai_search_html_documents(self):
-        ai_document_path = os.path.join(self.web_scraper_path, "clo3d.com", "ai_documents", self.env)
+    def find_all_ai_search_documents(self):
+        results = self.environment.search_client.search(search_fields=["Source"], search_text="https://clo3d.com", search_mode="all")
 
-        # most_recent_uploaded_folder = os.listdir(ai_document_path)[-1]
-        for folder in os.listdir(ai_document_path):
-            for file in os.listdir(os.path.join(ai_document_path, folder)):
-                with open(os.path.join(ai_document_path, folder, file), "r", encoding="utf-8") as f:
-                    document = json.load(f)
-                    document["@search.action"] = "delete"
-                    self.environment.search_client.upload_documents([document])
+        documents = []
+        for r in results:
+            documents.append({"ArticleId": r["ArticleId"], "Source": r["Source"]})
 
-    def delete_ai_search_html_document(self, article_id):
+        return documents
+
+    def delete_ai_search_document(self, article_id):
         document = {"@search.action": "delete", "ArticleId": article_id}
         self.environment.search_client.upload_documents([document])
+
+    def delete_all_ai_search_documents(self):
+        documents = self.find_all_ai_search_documents()
+
+        for document in documents:
+            document["@search.action"] = "delete"
+            print("Deleting " + document["ArticleId"])
+            self.environment.search_client.upload_documents([document])
 
 
 if __name__ == "__main__":
     env = questionary.select("Which environment?", choices=["dev", "prod"]).ask()
-    brand = questionary.select("Which brand?", choices=["clo3d", "closet", "md", "allinone"]).ask()
+    brand = questionary.select("Which brand?", choices=["allinone", "clo3d", "closet", "md"]).ask()
     task = questionary.select(
         "What task?",
         choices=[
             "Scrape All URLs",
-            "Scrape HTML",
-            "Scrape All HTML",
+            "Scrape HTML Page",
+            "Scrape All HTML Pages",
             "Generate Navigation Outline - Single Page",
             "Generate Navigation Outline - All Pages",
-            "Upload Navigation Outline Documents",
-            "Delete AI Search HTML Documents",
+            "Upload All Documents",
+            "Delete All AI Search Documents",
+            "Find All AI Search Documents",
         ],
     ).ask()
 
     web_scraper = WebScraper(Environment(env, brand))
 
-    if task == "Scrape All Page URLs":
+    if task == "Scrape All URLs":
         web_scraper.scrape_all_page_urls("https://clo3d.com")
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "clo3d.com", "scraped_urls.txt"), "w+") as f:
+
+        if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites", "clo3d.com")):
+            os.makedirs(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites", "clo3d.com"), exist_ok=True)
+
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites", "clo3d.com", "scraped_urls.txt"), "w+") as f:
             for url in urls:
                 f.write(url + "\n")
-    elif task == "Scrape All HTML":
+
+    elif task == "Scrape HTML Page":
+        if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites", "clo3d.com", "scraped_urls.txt")):
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites", "clo3d.com", "scraped_urls.txt"), "r") as f:
+                urls = [url.strip() for url in f.readlines()]
+                url = questionary.select("Which URL?", choices=urls).ask()
+        else:
+            url = questionary.text("URL").ask()
+        web_scraper.scrape_all_pages([url])
+
+    elif task == "Scrape All HTML Pages":
         web_scraper.scrape_all_pages()
 
         # Use pyppeteer to scrape the download page because it has dynamic content
         asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/clo/download/installer", "table", "main"))
         # Use pyppeteer to scrape the partners page because it has dynamic content
         asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/company/partners", "section", "main"))
-
-    elif task == "Scrape HTML":
-        if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "clo3d.com", "scraped_urls.txt")):
-            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "clo3d.com", "scraped_urls.txt"), "r") as f:
-                urls = [url.strip() for url in f.readlines()]
-                url = questionary.select("Which URL?", choices=urls).ask()
-        else:
-            url = questionary.text("URL").ask()
-        web_scraper.scrape_all_pages([url])
 
     elif task == "Generate Navigation Outline - Single Page":
         scraped_html_path = os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites"), "clo3d.com", "scraped_html")
@@ -475,7 +493,12 @@ if __name__ == "__main__":
         )
     elif task == "Generate Navigation Outline - All Pages":
         web_scraper.mp_generate_navigation_outline_html_openai()
-    elif task == "Upload Navigation Outline Documents":
-        web_scraper.mp_upload_openai_html()
-    elif task == "Delete AI Search HTML Documents":
-        web_scraper.delete_ai_search_html_documents()
+
+    elif task == "Upload All Documents":
+        web_scraper.mp_upload_documents()
+
+    elif task == "Delete All AI Search Documents":
+        web_scraper.delete_all_ai_search_documents()
+
+    elif task == "Find All AI Search Documents":
+        web_scraper.find_all_ai_search_documents()
