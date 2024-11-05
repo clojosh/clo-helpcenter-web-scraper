@@ -534,4 +534,5 @@ if __name__ == "__main__":
         web_scraper.delete_all_ai_search_documents()
 
     elif task == "Find All AI Search Documents":
-        web_scraper.find_all_ai_search_documents()
+        documents = web_scraper.find_all_ai_search_documents()
+        print(documents)

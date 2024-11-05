@@ -370,8 +370,7 @@ class Landing:
             content = f.read()
 
             # Extract the title from the OpenAI HTML file
-            # title = environment.openai_helper.create_webpage_title(content).replace('"', "").replace("*", "").replace("Title: ", "").replace("#", "")
-            title = "Guide to Features, Patch Notes, and Latest Bug Fixes"
+            title = environment.openai_helper.create_webpage_title(content).replace('"', "").replace("*", "").replace("Title: ", "").replace("#", "")
 
             # Create the Azure Search document
             document = {
@@ -379,7 +378,7 @@ class Landing:
                 "ArticleId": shortuuid.uuid(),
                 "Title": title,
                 "Content": re.sub(r"\s+", " ", content.replace("\n", " ")),
-                "Source": "https://clo3d.com/" + page.replace(".txt", "").replace("_", "/").replace("/userType", "?userType"),
+                "Source": "https://landing.clo-set.com" + page.replace(".txt", "").replace("_", "/").replace("/userType", "?userType"),
                 "YoutubeLinks": [],
             }
 
@@ -399,9 +398,9 @@ class Landing:
         upload_openai_html_params = []
 
         # Loop through all OpenAI HTML files in the openai_html directory
-        for page in os.listdir(os.path.join(project_path, "landing", "openai_html")):
+        for page in os.listdir(openai_html_path):
             # Create a tuple of parameters to pass to the upload_openai_html function
-            upload_openai_html_params.append((self.env, self.brand, os.path.join(project_path, "landing", "openai_html", page), page))
+            upload_openai_html_params.append((self.env, self.brand, os.path.join(openai_html_path, page), page))
 
         # Upload all OpenAI HTML documents in parallel using multiprocessing
         with multiprocessing.Pool(5) as p:
@@ -410,7 +409,9 @@ class Landing:
             p.join()
 
     def find_all_ai_search_documents(self):
-        results = self.environment.search_client.search(search_fields=["Source"], search_text="https://clo3d.com", search_mode="all")
+        results = self.environment.search_client.search(
+            search_fields=["Source"], search_text="https://landing.clo-set.com/allatonce", search_mode="all"
+        )
 
         documents = []
         for r in results:
@@ -522,4 +523,5 @@ if __name__ == "__main__":
         web_scraper.delete_all_ai_search_documents()
 
     elif task == "Find All AI Search Documents":
-        web_scraper.find_all_ai_search_documents()
+        documents = web_scraper.find_all_ai_search_documents()
+        print(documents)
