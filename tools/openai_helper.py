@@ -207,7 +207,7 @@ class OpenAIHelper:
         if tokens >= 32000 - 1500:
             raise ValueError(f"Content too long, tokens found {tokens}")
 
-        messages = [{"role": "user", "content": f"Generate a title for a website based on the following content: {content}"}]
+        messages = [{"role": "user", "content": f"Generate a title for a web page based on the following content: {content}"}]
 
         chat_completion = self.openai_client.chat.completions.create(
             model=self.AZURE_OPENAI_CHATGPT_DEPLOYMENT, messages=messages, temperature=0.7, max_tokens=50, n=1
