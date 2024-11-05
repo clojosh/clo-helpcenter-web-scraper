@@ -14,15 +14,15 @@ from bs4 import BeautifulSoup, NavigableString, Tag, element
 from pyppeteer import launch
 from requests_html import HTMLSession
 
-backend_dir = Path(__file__).parent.parent
-
-sys.path.append(str(os.path.join(backend_dir, "ai_search")))
 from tools.environment import Environment
 
 urls = []
+project_path = os.path.dirname(os.path.abspath(__file__))
+scraped_html_path = os.path.join(project_path, "websites", "landing", "scraped_html")
+openai_html_path = os.path.join(project_path, "websites", "landing", "openai_html")
 
 
-class WebScraper:
+class Landing:
     def __init__(self, environment: Environment):
         self.env = environment.env
         self.environment = environment
@@ -30,7 +30,6 @@ class WebScraper:
         self.language = environment.language
         self.search_client = environment.search_client
         self.openai_helper = environment.openai_helper
-        self.web_scraper_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites")
 
     @staticmethod
     def reduce_tokens(scraped_content: str):
@@ -100,7 +99,7 @@ class WebScraper:
             for tag in tags:
                 # Replace the URL with a file name
                 url = url.replace("https://clo3d.com/", "").replace("/", "_")
-                with open(os.path.join(self.web_scraper_path, "clo3d.com", "scraped_content", f"{url.strip()}.txt"), "w+", encoding="utf-8") as f:
+                with open(os.path.join(project_path, "landing", "scraped_content", f"{url.strip()}.txt"), "w+", encoding="utf-8") as f:
                     # Remove extra whitespaces from the tag
                     f.write(re.sub(r"\s{2,}", " ", tag))
 
@@ -192,6 +191,9 @@ class WebScraper:
         for picture in soup.find_all("picture"):
             picture.decompose()
 
+        for script in soup.find_all("script"):
+            script.decompose()
+
         return soup
 
     def format_html(self, url: str, html: str):
@@ -200,14 +202,11 @@ class WebScraper:
             .replace("<!--]-->", "")
             .replace("<!--", "")
             .replace("-->", "")
-            .replace(' href="/', ' href="https://clo3d.com/')
+            .replace(' href="/', ' href="https://landing.clo-set.com/allatonce')
         )
         soup = self.remove_unnecessary_tags(html)
 
-        if url == "https://clo3d.com/en/":
-            contents = self.remove_tag_attributes(soup.find("body"))
-        else:
-            contents = self.remove_tag_attributes(soup.find("main"))
+        contents = self.remove_tag_attributes(soup.find("body"))
 
         return contents
 
@@ -225,15 +224,7 @@ class WebScraper:
         soup = BeautifulSoup(response.text, "html.parser")
 
         # Excluded pages
-        excluded_pages = [
-            "legal/archives",
-            "articles",
-            "clo-users/stories/",
-            "clo-users/summits/",
-            "jobs/recruit/",
-            "resources/esg/list?",
-            "resources/notices/",
-        ]
+        excluded_pages = []
 
         # Find all 'a' tags with a href attribute
         for tag in soup.find_all("a", href=True):
@@ -241,17 +232,17 @@ class WebScraper:
 
             # Check if the URL is relative or absolute
             if (
-                (href.startswith("https://clo3d.com") or href.startswith("/"))
+                (href.startswith("https://landing.clo-set.com") or href.startswith("/"))
                 and any(page in href for page in excluded_pages) is False
                 and "#" not in href
                 and re.search(r"resources/esg/\d+", href) is None
             ):
                 # If the URL is relative, add the base URL
-                if not href.startswith("https://clo3d.com"):
-                    href = "https://clo3d.com" + href
+                if not href.startswith("https://landing.clo-set.com"):
+                    href = "https://landing.clo-set.com" + href
 
                 # If the URL is not already in the list, add it
-                if href not in urls and href != "https://clo3d.com/en/support":
+                if href not in urls:
                     print(href.strip())
                     urls.append(href.strip())
 
@@ -263,14 +254,8 @@ class WebScraper:
     def scrape_all_pages(self, scraped_urls=[]):
         session = HTMLSession()
 
-        if len(scraped_urls) == 0:
-            with open(os.path.join(self.web_scraper_path, "clo3d.com", "scraped_urls.txt"), "r") as f:
-                scraped_urls = f.readlines()
-
         for url in scraped_urls:
             # Skip the download page because it has dynamic content
-            if url == "https://clo3d.com/en/clo/download/installer" or url == "https://clo3d.com/en/company/partners":
-                continue
 
             print("Scraping " + url)
 
@@ -278,6 +263,7 @@ class WebScraper:
                 resp = session.get(url)
                 resp.html.render()
                 html = resp.html.html
+
             except Exception as e:
                 print("Error scraping " + url + ": " + str(e))
                 continue
@@ -288,11 +274,11 @@ class WebScraper:
                 print("No contents found for " + url)
                 continue
 
-            if not os.path.exists(os.path.join(self.web_scraper_path, "clo3d.com", "scraped_html")):
-                os.makedirs(os.path.join(self.web_scraper_path, "clo3d.com", "scraped_html"))
+            if not os.path.exists(scraped_html_path):
+                os.makedirs(scraped_html_path)
 
-            file_name = url.replace("https://clo3d.com/", "").replace("/", "_").replace("\n", "").replace("?", "_")
-            with open(os.path.join(self.web_scraper_path, "clo3d.com", "scraped_html", f"{file_name}.html"), "w+", encoding="utf-8") as f:
+            file_name = url.replace("https://landing.clo-set.com", "").replace("/", "_").replace("\n", "").replace("?", "_")
+            with open(os.path.join(scraped_html_path, f"{file_name}.html"), "w+", encoding="utf-8") as f:
                 f.write("<html>\n" + content.prettify() + "\n" + "</html>")
 
     async def pyppeteer_scraper(self, url: str, tag_to_wait_for: str, tag_to_scrape: str) -> None:
@@ -315,7 +301,7 @@ class WebScraper:
         content = self.format_html(url, html)
 
         file_name = url.replace("https://clo3d.com/", "").replace("/", "_").replace("\n", "").replace("?", "_")
-        with open(os.path.join(self.web_scraper_path, "clo3d.com", "scraped_html", f"{file_name}.html"), "w+", encoding="utf-8") as f:
+        with open(os.path.join(scraped_html_path, f"{file_name}.html"), "w+", encoding="utf-8") as f:
             f.write("<html>\n" + content.prettify() + "\n" + "</html>")
 
         await browser.close()
@@ -335,8 +321,8 @@ class WebScraper:
         environment = Environment(env, brand)
 
         print("Creating Navigation for " + page)
-        with open(os.path.join(scraped_html_path, "clo3d.com", "scraped_html", page), "r", encoding="utf-8") as f:
-            scraped_content = WebScraper.reduce_tokens(f.read())
+        with open(os.path.join(scraped_html_path, page), "r", encoding="utf-8") as f:
+            scraped_content = Landing.reduce_tokens(f.read())
 
             url = "https://clo3d.com/" + page.replace(".html", "").replace("_", "/").replace("/userType", "?userType")
 
@@ -347,21 +333,21 @@ class WebScraper:
 
             # outline = environment.openai_helper.outline_webpage(scraped_content, url)
 
-            if not os.path.exists(os.path.join(scraped_html_path, "clo3d.com", "openai_html")):
-                os.makedirs(os.path.join(scraped_html_path, "clo3d.com", "openai_html"))
+            if not os.path.exists(os.path.join(openai_html_path)):
+                os.makedirs(os.path.join(openai_html_path))
 
             outline = re.sub(r"<.*?>", "", scraped_content)
-            with open(os.path.join(scraped_html_path, "clo3d.com", "openai_html", page.replace(".html", ".txt")), "w+", encoding="utf-8") as f:
+            with open(os.path.join(openai_html_path, page.replace(".html", ".txt")), "w+", encoding="utf-8") as f:
                 f.write(navigate + "\n\n" + outline.replace("\n", " ").strip())
 
     def mp_generate_openai_documents(self):
         navigate_html_openai_params = []
 
-        for page in os.listdir(os.path.join(self.web_scraper_path, "clo3d.com", "scraped_html")):
-            navigate_html_openai_params.append((self.env, self.brand, self.web_scraper_path, page))
+        for page in os.listdir(scraped_html_path):
+            navigate_html_openai_params.append((self.env, self.brand, project_path, page))
 
         with multiprocessing.Pool(3) as p:
-            p.starmap_async(WebScraper.generate_openai_document, navigate_html_openai_params, error_callback=lambda e: print(e))
+            p.starmap_async(Landing.generate_openai_document, navigate_html_openai_params, error_callback=lambda e: print(e))
             p.close()
             p.join()
 
@@ -413,13 +399,13 @@ class WebScraper:
         upload_openai_html_params = []
 
         # Loop through all OpenAI HTML files in the openai_html directory
-        for page in os.listdir(os.path.join(self.web_scraper_path, "clo3d.com", "openai_html")):
+        for page in os.listdir(os.path.join(project_path, "landing", "openai_html")):
             # Create a tuple of parameters to pass to the upload_openai_html function
-            upload_openai_html_params.append((self.env, self.brand, os.path.join(self.web_scraper_path, "clo3d.com", "openai_html", page), page))
+            upload_openai_html_params.append((self.env, self.brand, os.path.join(project_path, "landing", "openai_html", page), page))
 
         # Upload all OpenAI HTML documents in parallel using multiprocessing
         with multiprocessing.Pool(5) as p:
-            p.starmap_async(WebScraper.upload_document, upload_openai_html_params, error_callback=lambda e: print(e))
+            p.starmap_async(Landing.upload_document, upload_openai_html_params, error_callback=lambda e: print(e))
             p.close()
             p.join()
 
@@ -464,36 +450,40 @@ if __name__ == "__main__":
         ],
     ).ask()
 
-    web_scraper = WebScraper(Environment(env, brand))
+    web_scraper = Landing(Environment(env, brand))
 
     if task == "Scrape All URLs":
-        web_scraper.scrape_all_page_urls("https://clo3d.com")
+        web_scraper.scrape_all_page_urls("https://landing.clo-set.com/allatonce")
 
-        if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites", "clo3d.com")):
-            os.makedirs(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites", "clo3d.com"), exist_ok=True)
+        if not os.path.exists(os.path.join(project_path, "websites", "landing")):
+            os.makedirs(os.path.join(project_path, "websites", "landing"), exist_ok=True)
 
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites", "clo3d.com", "scraped_urls.txt"), "w+") as f:
+        with open(os.path.join(project_path, "websites", "landing", "scraped_urls.txt"), "w+") as f:
             for url in urls:
                 f.write(url + "\n")
 
     elif task == "Scrape HTML Page":
-        if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites", "clo3d.com", "scraped_urls.txt")):
-            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites", "clo3d.com", "scraped_urls.txt"), "r") as f:
+        urls = []
+        if os.path.exists(os.path.join(project_path, "websites", "landing", "scraped_urls.txt")):
+            with open(os.path.join(project_path, "websites", "landing", "scraped_urls.txt"), "r") as f:
                 urls = [url.strip() for url in f.readlines()]
-                url = questionary.select("Which URL?", choices=urls).ask()
+
+        if len(urls) > 0:
+            url = questionary.select("Which URL?", choices=urls).ask()
         else:
             url = questionary.text("URL").ask()
+
         web_scraper.scrape_all_pages([url])
 
     elif task == "Scrape All HTML Pages":
-        web_scraper.scrape_all_pages()
+        urls = []
+        if os.path.exists(os.path.join(project_path, "websites", "landing", "scraped_urls.txt")):
+            with open(os.path.join(project_path, "websites", "landing", "scraped_urls.txt"), "r") as f:
+                urls = [url.strip() for url in f.readlines()]
 
-        # Use pyppeteer to scrape web pages that have dynamic content
-        asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/clo/download/installer", "table", "main"))
-        asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/company/partners", "section", "main"))
+        web_scraper.scrape_all_pages(urls)
 
     elif task == "Generate OpenAI Document":
-        scraped_html_path = os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites"), "clo3d.com", "scraped_html")
         page = questionary.select(
             "Which HTML page?",
             choices=os.listdir(scraped_html_path),
@@ -502,23 +492,22 @@ if __name__ == "__main__":
         web_scraper.generate_openai_document(
             Environment(env, brand),
             brand,
-            os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites", "clo3d.com", "scraped_html")),
+            scraped_html_path,
             page,
         )
     elif task == "Generate All OpenAI Documents":
         web_scraper.mp_generate_openai_documents()
 
     elif task == "Upload Document":
-        scraped_html_path = os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites"), "clo3d.com", "openai_html")
         page = questionary.select(
             "Which OpenAI page?",
-            choices=os.listdir(scraped_html_path),
+            choices=os.listdir(openai_html_path),
         ).ask()
 
         web_scraper.upload_document(
             Environment(env, brand),
             brand,
-            os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), "websites", "clo3d.com", "openai_html")),
+            openai_html_path,
             page,
         )
 
