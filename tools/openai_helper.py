@@ -199,7 +199,7 @@ class OpenAIHelper:
             return ""
 
     @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
-    def create_webpage_title(self, content):
+    def create_webpage_title(self, content) -> str:
         """Scrape a Webpage"""
 
         tokens = num_tokens_from_string(content, "gpt-4")

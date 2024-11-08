@@ -6,7 +6,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import questionary
 import requests
@@ -291,27 +291,42 @@ class CLO3D:
             with open(os.path.join(scraped_html_path, f"{file_name}.html"), "w+", encoding="utf-8") as f:
                 f.write("<html>\n" + content.prettify() + "\n" + "</html>")
 
-    async def pyppeteer_scraper(self, url: str, tag_selector: str = "") -> None:
+    async def pyppeteer_scraper(self, url: str, tag_selector: Optional[str] = None) -> None:
+        """
+        Uses Pyppeteer to load a webpage, wait for a specific tag to be visible, and then scrape the inner HTML of that tag.
+        The scraped HTML is then formatted and saved to a file.
+
+        Args:
+            url (str): The URL of the webpage to scrape.
+            tag_selector (str, optional): The CSS selector to wait for and scrape. Defaults to None.
+        """
+
+        # Start a headless Chrome browser
         # browser = await launch(headless=False, defaultViewport=None, args=["--start-maximized"])
         browser = await launch(headless=True)
         page = await browser.newPage()
         await page.goto(url, {"waitUntil": "networkidle0"})
 
+        # Click the cookie consent button
         await page.waitForSelector(".consent-footer button:nth-child(2)")
         cookie = await page.querySelector(".consent-footer button:nth-child(2)")
         await cookie.click()
 
+        # Wait for the tag and scrape the HTML
         html_pages: List[str] = []
         if tag_selector:
             await page.waitForSelector(tag_selector)
             click_tags = await page.querySelectorAll(tag_selector)
             for tag in click_tags:
+                # Click the tag and wait for the page to load
                 await tag.click()
                 await asyncio.sleep(2)
+                # Scrape the HTML
                 html_pages.append(await page.content())
         else:
             html_pages.append(await page.content())
 
+        # Save the scraped HTML to a file
         for i, page in enumerate(html_pages):
             content = self.format_html(url, page)
 
@@ -319,6 +334,7 @@ class CLO3D:
             with open(os.path.join(scraped_html_path, f"{file_name}.html"), "w+", encoding="utf-8") as f:
                 f.write("<html>\n" + content.prettify() + "\n" + "</html>")
 
+        # Close the browser
         await browser.close()
 
     @staticmethod
@@ -388,7 +404,14 @@ class CLO3D:
             content = f.read()
 
             # Extract the title from the OpenAI HTML file
-            title = environment.openai_helper.create_webpage_title(content).replace('"', "").replace("*", "").replace("Title: ", "").replace("#", "")
+            title = (
+                environment.openai_helper.create_webpage_title(content)
+                .replace('"', "")
+                .replace("*", "")
+                .replace("Title: ", "")
+                .replace("#", "")
+                .strip()
+            )
             # title = "Guide to Features, Patch Notes, and Latest Bug Fixes"
 
             # Create the Azure Search document
@@ -397,7 +420,7 @@ class CLO3D:
                 "ArticleId": shortuuid.uuid(),
                 "Title": title,
                 "Content": re.sub(r"\s+", " ", content.replace("\n", " ")),
-                "Source": "https://clo3d.com/" + page.replace(".txt", "").replace("_", "/").replace("/userType", "?userType"),
+                "Source": "https://clo3d.com/" + re.sub(r"_\d+", "", page).replace(".txt", "").replace("_", "/").replace("/userType", "?userType"),
                 "YoutubeLinks": [],
             }
 
