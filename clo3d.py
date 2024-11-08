@@ -6,6 +6,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import List
 
 import questionary
 import requests
@@ -290,28 +291,33 @@ class CLO3D:
             with open(os.path.join(scraped_html_path, f"{file_name}.html"), "w+", encoding="utf-8") as f:
                 f.write("<html>\n" + content.prettify() + "\n" + "</html>")
 
-    async def pyppeteer_scraper(self, url: str) -> None:
-        """
-        Uses Pyppeteer to load a webpage, wait for a specific tag to be visible, and then scrape the inner HTML of that tag.
-        The scraped HTML is then formatted and saved to a file.
-
-        Args:
-            url (str): The URL of the webpage to scrape.
-            tag (str): The tag to wait for and scrape.
-        """
-
-        browser = await launch()
-
+    async def pyppeteer_scraper(self, url: str, tag_selector: str = "") -> None:
+        # browser = await launch(headless=False, defaultViewport=None, args=["--start-maximized"])
+        browser = await launch(headless=True)
         page = await browser.newPage()
-
         await page.goto(url, {"waitUntil": "networkidle0"})
 
-        html = await page.content()
-        content = self.format_html(url, html)
+        await page.waitForSelector(".consent-footer button:nth-child(2)")
+        cookie = await page.querySelector(".consent-footer button:nth-child(2)")
+        await cookie.click()
 
-        file_name = url.replace("https://clo3d.com/", "").replace("/", "_").replace("\n", "").replace("?", "_")
-        with open(os.path.join(scraped_html_path, f"{file_name}.html"), "w+", encoding="utf-8") as f:
-            f.write("<html>\n" + content.prettify() + "\n" + "</html>")
+        html_pages: List[str] = []
+        if tag_selector:
+            await page.waitForSelector(tag_selector)
+            click_tags = await page.querySelectorAll(tag_selector)
+            for tag in click_tags:
+                await tag.click()
+                await asyncio.sleep(2)
+                html_pages.append(await page.content())
+        else:
+            html_pages.append(await page.content())
+
+        for i, page in enumerate(html_pages):
+            content = self.format_html(url, page)
+
+            file_name = url.replace("https://clo3d.com/", "").replace("/", "_").replace("\n", "").replace("?", "_") + (f"_{i}" if i > 0 else "")
+            with open(os.path.join(scraped_html_path, f"{file_name}.html"), "w+", encoding="utf-8") as f:
+                f.write("<html>\n" + content.prettify() + "\n" + "</html>")
 
         await browser.close()
 
@@ -333,7 +339,10 @@ class CLO3D:
         with open(os.path.join(scraped_html_path, page), "r", encoding="utf-8") as f:
             scraped_content = CLO3D.reduce_tokens(f.read())
 
-            url = "https://clo3d.com/" + page.replace(".html", "").replace("_", "/").replace("/userType", "?userType")
+            if "en_clo_features_" in page:
+                url = "https://clo3d.com/en/clo/features"
+            else:
+                url = "https://clo3d.com/" + page.replace(".html", "").replace("_", "/").replace("/userType", "?userType")
 
             try:
                 navigate = environment.openai_helper.scrape_webpage(scraped_content, url)
@@ -379,8 +388,8 @@ class CLO3D:
             content = f.read()
 
             # Extract the title from the OpenAI HTML file
-            # title = environment.openai_helper.create_webpage_title(content).replace('"', "").replace("*", "").replace("Title: ", "").replace("#", "")
-            title = "Guide to Features, Patch Notes, and Latest Bug Fixes"
+            title = environment.openai_helper.create_webpage_title(content).replace('"', "").replace("*", "").replace("Title: ", "").replace("#", "")
+            # title = "Guide to Features, Patch Notes, and Latest Bug Fixes"
 
             # Create the Azure Search document
             document = {
@@ -485,16 +494,17 @@ if __name__ == "__main__":
         web_scraper.scrape_all_pages([url])
 
     elif task == "Scrape All HTML Pages":
-        urls = []
-        if os.path.exists(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt")):
-            with open(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt"), "r") as f:
-                urls = [url.strip() for url in f.readlines()]
+        # urls = []
+        # if os.path.exists(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt")):
+        #     with open(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt"), "r") as f:
+        #         urls = [url.strip() for url in f.readlines()]
 
-        web_scraper.scrape_all_pages(urls)
+        # web_scraper.scrape_all_pages(urls)
 
         # Use pyppeteer to scrape web pages that have dynamic content
-        asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/clo/download/installer"))
-        asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/company/partners"))
+        # asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/clo/download/installer"))
+        # asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/company/partners"))
+        asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/clo/features", ".tab-titles"))
 
     elif task == "Generate OpenAI Document":
         page = questionary.select(
@@ -507,6 +517,7 @@ if __name__ == "__main__":
             brand,
             page,
         )
+
     elif task == "Generate All OpenAI Documents":
         web_scraper.mp_generate_openai_documents()
 
@@ -535,4 +546,5 @@ if __name__ == "__main__":
 
     elif task == "Find All AI Search Documents":
         documents = web_scraper.find_all_ai_search_documents()
-        print(documents)
+        for document in documents:
+            print(document["ArticleId"] + "\n" + document["Source"], "\n")
