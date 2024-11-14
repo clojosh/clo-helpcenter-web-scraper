@@ -300,10 +300,8 @@ class CLO3D:
             url (str): The URL of the webpage to scrape.
             tag_selector (str, optional): The CSS selector to wait for and scrape. Defaults to None.
         """
-
-        # Start a headless Chrome browser
-        # browser = await launch(headless=False, defaultViewport=None, args=["--start-maximized"])
-        browser = await launch(headless=True)
+        browser = await launch(headless=False, defaultViewport=None, args=["--start-maximized"])
+        # browser = await launch(headless=True)
         page = await browser.newPage()
         await page.goto(url, {"waitUntil": "networkidle0"})
 
@@ -311,6 +309,7 @@ class CLO3D:
         await page.waitForSelector(".consent-footer button:nth-child(2)")
         cookie = await page.querySelector(".consent-footer button:nth-child(2)")
         await cookie.click()
+        await asyncio.sleep(5)
 
         # Wait for the tag and scrape the HTML
         html_pages: List[str] = []
@@ -396,10 +395,10 @@ class CLO3D:
             openai_html_path (str): The path to the OpenAI HTML file.
             page (str): Name of the page to be uploaded.
         """
-        print("Uploading " + page)
+        print("\nUploading " + page)
         environment = Environment(env, brand)
 
-        with open(os.path.join(openai_html_path, page), "r", encoding="utf-8") as f:
+        with open(os.path.join(openai_html_path), "r", encoding="utf-8") as f:
             # Read the content of the OpenAI HTML file
             content = f.read()
 
@@ -423,6 +422,8 @@ class CLO3D:
                 "Source": "https://clo3d.com/" + re.sub(r"_\d+", "", page).replace(".txt", "").replace("_", "/").replace("/userType", "?userType"),
                 "YoutubeLinks": [],
             }
+
+            # print(document["Title"] + "\n" + document["Source"])
 
             # Generate the embeddings for the title and content
             document["TitleVector"] = environment.openai_helper.generate_embeddings(title)
@@ -517,17 +518,17 @@ if __name__ == "__main__":
         web_scraper.scrape_all_pages([url])
 
     elif task == "Scrape All HTML Pages":
-        # urls = []
-        # if os.path.exists(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt")):
-        #     with open(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt"), "r") as f:
-        #         urls = [url.strip() for url in f.readlines()]
+        urls = []
+        if os.path.exists(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt")):
+            with open(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt"), "r") as f:
+                urls = [url.strip() for url in f.readlines()]
 
-        # web_scraper.scrape_all_pages(urls)
+        web_scraper.scrape_all_pages(urls)
 
         # Use pyppeteer to scrape web pages that have dynamic content
         # asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/clo/download/installer"))
         # asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/company/partners"))
-        asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/clo/features", ".tab-titles"))
+        # asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/clo/features", ".tab-titles"))
 
     elif task == "Generate OpenAI Document":
         page = questionary.select(

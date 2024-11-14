@@ -6,6 +6,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import questionary
 import requests
@@ -281,29 +282,50 @@ class Landing:
             with open(os.path.join(scraped_html_path, f"{file_name}.html"), "w+", encoding="utf-8") as f:
                 f.write("<html>\n" + content.prettify() + "\n" + "</html>")
 
-    async def pyppeteer_scraper(self, url: str, tag_to_wait_for: str, tag_to_scrape: str) -> None:
+    async def pyppeteer_scraper(self, url: str, tag_selector: Optional[str] = None) -> None:
         """
         Uses Pyppeteer to load a webpage, wait for a specific tag to be visible, and then scrape the inner HTML of that tag.
         The scraped HTML is then formatted and saved to a file.
 
         Args:
             url (str): The URL of the webpage to scrape.
-            tag (str): The tag to wait for and scrape.
+            tag_selector (str, optional): The CSS selector to wait for and scrape. Defaults to None.
         """
 
-        browser = await launch()
-
+        # Start a headless Chrome browser
+        # browser = await launch(headless=False, defaultViewport=None, args=["--start-maximized"])
+        browser = await launch(headless=True)
         page = await browser.newPage()
-
         await page.goto(url, {"waitUntil": "networkidle0"})
 
-        html = await page.content()
-        content = self.format_html(url, html)
+        # Click the cookie consent button
+        await page.waitForSelector(".consent-footer button:nth-child(2)")
+        cookie = await page.querySelector(".consent-footer button:nth-child(2)")
+        await cookie.click()
 
-        file_name = url.replace("https://clo3d.com/", "").replace("/", "_").replace("\n", "").replace("?", "_")
-        with open(os.path.join(scraped_html_path, f"{file_name}.html"), "w+", encoding="utf-8") as f:
-            f.write("<html>\n" + content.prettify() + "\n" + "</html>")
+        # Wait for the tag and scrape the HTML
+        html_pages: List[str] = []
+        if tag_selector:
+            await page.waitForSelector(tag_selector)
+            click_tags = await page.querySelectorAll(tag_selector)
+            for tag in click_tags:
+                # Click the tag and wait for the page to load
+                await tag.click()
+                await asyncio.sleep(2)
+                # Scrape the HTML
+                html_pages.append(await page.content())
+        else:
+            html_pages.append(await page.content())
 
+        # Save the scraped HTML to a file
+        for i, page in enumerate(html_pages):
+            content = self.format_html(url, page)
+
+            file_name = url.replace("https://clo3d.com/", "").replace("/", "_").replace("\n", "").replace("?", "_") + (f"_{i}" if i > 0 else "")
+            with open(os.path.join(scraped_html_path, f"{file_name}.html"), "w+", encoding="utf-8") as f:
+                f.write("<html>\n" + content.prettify() + "\n" + "</html>")
+
+        # Close the browser
         await browser.close()
 
     @staticmethod
