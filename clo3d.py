@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup, NavigableString, Tag, element
 from pyppeteer import launch
 from requests_html import HTMLSession
 
-from tools.environment import Environment
+from tools.azureenv import AzureEnv
 
 urls = []
 project_path = os.path.dirname(os.path.abspath(__file__))
@@ -24,13 +24,12 @@ openai_html_path = os.path.join(project_path, "websites", "clo3d.com", "openai_h
 
 
 class CLO3D:
-    def __init__(self, environment: Environment):
-        self.env = environment.env
-        self.environment = environment
-        self.brand = environment.brand
-        self.language = environment.language
-        self.search_client = environment.search_client
-        self.openai_helper = environment.openai_helper
+    def __init__(self, azure_env: AzureEnv):
+        self.azure_env = azure_env
+        self.brand = azure_env.brand
+        self.language = azure_env.language
+        self.search_client = azure_env.search_client
+        self.openai_helper = azure_env.openai_helper
 
     @staticmethod
     def reduce_tokens(scraped_content: str):
@@ -201,6 +200,9 @@ class CLO3D:
             .replace("<!--", "")
             .replace("-->", "")
             .replace(' href="/', ' href="https://clo3d.com/')
+            .replace("joshua.lee@clo3d.com", "[user email]")
+            .replace("cd7a0ffabc84f4fe498b", "[user id]")
+            .replace("joshua.lee%40clo3d.com", "user_email")
         )
         soup = self.remove_unnecessary_tags(html)
 
@@ -291,7 +293,7 @@ class CLO3D:
             with open(os.path.join(scraped_html_path, f"{file_name}.html"), "w+", encoding="utf-8") as f:
                 f.write("<html>\n" + content.prettify() + "\n" + "</html>")
 
-    async def pyppeteer_scraper(self, url: str, tag_selector: Optional[str] = None) -> None:
+    async def pyppeteer_scraper(self, url: str, tag_selector: Optional[str] = None, email: str = "", password: str = "") -> None:
         """
         Uses Pyppeteer to load a webpage, wait for a specific tag to be visible, and then scrape the inner HTML of that tag.
         The scraped HTML is then formatted and saved to a file.
@@ -300,7 +302,7 @@ class CLO3D:
             url (str): The URL of the webpage to scrape.
             tag_selector (str, optional): The CSS selector to wait for and scrape. Defaults to None.
         """
-        browser = await launch(headless=False, defaultViewport=None, args=["--start-maximized"])
+        browser = await launch(headless=True, defaultViewport=None, args=["--start-maximized"])
         # browser = await launch(headless=True)
         page = await browser.newPage()
         await page.goto(url, {"waitUntil": "networkidle0"})
@@ -310,6 +312,21 @@ class CLO3D:
         cookie = await page.querySelector(".consent-footer button:nth-child(2)")
         await cookie.click()
         await asyncio.sleep(5)
+
+        if email and password:
+            sign_in_button = await page.querySelector("#app > div > main > div > div:nth-child(2) > div > div > a")
+            await sign_in_button.click()
+            await asyncio.sleep(5)
+            userid_input = await page.querySelector("input[type='email']")
+            await userid_input.type(email)
+            passwrod_input = await page.querySelector("input[type='password']")
+            await passwrod_input.type(password)
+            await asyncio.sleep(5)
+            sign_in_button = await page.querySelector(
+                "body > div.css-eru734 > div.css-1pjas8e > div.css-1p6caij > div > div.css-bxpdjb > button.round.css-11ms28s.elfce4j0"
+            )
+            await sign_in_button.click()
+            await asyncio.sleep(5)
 
         # Wait for the tag and scrape the HTML
         html_pages: List[str] = []
@@ -337,7 +354,7 @@ class CLO3D:
         await browser.close()
 
     @staticmethod
-    def generate_openai_document(env: Environment, brand: str, page: str):
+    def generate_openai_document(stage: str, brand: str, page: str):
         """
         Navigates and outlines a webpage using OpenAI's API.
         Args:
@@ -348,7 +365,7 @@ class CLO3D:
         Returns:
             None
         """
-        environment = Environment(env, brand)
+        azure_env = AzureEnv(stage, brand)
 
         print("Creating Navigation for " + page)
         with open(os.path.join(scraped_html_path, page), "r", encoding="utf-8") as f:
@@ -360,16 +377,16 @@ class CLO3D:
                 url = "https://clo3d.com/" + page.replace(".html", "").replace("_", "/").replace("/userType", "?userType")
 
             try:
-                navigate = environment.openai_helper.scrape_webpage(scraped_content, url)
+                navigate = azure_env.openai_helper.scrape_webpage(scraped_content, url)
             except Exception as e:
                 print(e)
 
-            # outline = environment.openai_helper.outline_webpage(scraped_content, url)
+            outline = azure_env.openai_helper.outline_webpage(scraped_content, url)
+            outline = re.sub(r"<.*?>", "", scraped_content)
 
             if not os.path.exists(openai_html_path):
                 os.makedirs(openai_html_path)
 
-            outline = re.sub(r"<.*?>", "", scraped_content)
             with open(os.path.join(openai_html_path, page.replace(".html", ".txt")), "w+", encoding="utf-8") as f:
                 f.write(navigate + "\n\n" + outline.replace("\n", " ").strip())
 
@@ -377,7 +394,7 @@ class CLO3D:
         navigate_html_openai_params = []
 
         for page in os.listdir(os.path.join(scraped_html_path)):
-            navigate_html_openai_params.append((self.env, self.brand, page))
+            navigate_html_openai_params.append((self.azure_env.stage, self.brand, page))
 
         with multiprocessing.Pool(3) as p:
             p.starmap_async(CLO3D.generate_openai_document, navigate_html_openai_params, error_callback=lambda e: print(e))
@@ -385,26 +402,26 @@ class CLO3D:
             p.join()
 
     @staticmethod
-    def upload_document(env: Environment, brand: str, openai_html_path: str, page: str):
+    def upload_document(stage: str, brand: str, openai_html_path: str, page: str):
         """
         Uploads the OpenAI HTML to Azure Search.
 
         Args:
-            env (Environment): The environment in which the scraper is running.
+            stage : The stage in which the scraper is running.
             brand (str): The brand associated with the scraping task.
             openai_html_path (str): The path to the OpenAI HTML file.
             page (str): Name of the page to be uploaded.
         """
         print("\nUploading " + page)
-        environment = Environment(env, brand)
+        azure_env = AzureEnv(stage, brand)
 
-        with open(os.path.join(openai_html_path), "r", encoding="utf-8") as f:
+        with open(os.path.join(openai_html_path, page), "r", encoding="utf-8") as f:
             # Read the content of the OpenAI HTML file
             content = f.read()
 
             # Extract the title from the OpenAI HTML file
             title = (
-                environment.openai_helper.create_webpage_title(content)
+                azure_env.openai_helper.create_webpage_title(content)
                 .replace('"', "")
                 .replace("*", "")
                 .replace("Title: ", "")
@@ -426,11 +443,11 @@ class CLO3D:
             # print(document["Title"] + "\n" + document["Source"])
 
             # Generate the embeddings for the title and content
-            document["TitleVector"] = environment.openai_helper.generate_embeddings(title)
-            document["ContentVector"] = environment.openai_helper.generate_embeddings(content)
+            document["TitleVector"] = azure_env.openai_helper.generate_embeddings(title)
+            document["ContentVector"] = azure_env.openai_helper.generate_embeddings(content)
 
             # Upload the document to Azure Search
-            environment.search_client.upload_documents([document])
+            azure_env.search_client.upload_documents([document])
 
     def mp_upload_documents(self):
         """
@@ -443,7 +460,7 @@ class CLO3D:
         # Loop through all OpenAI HTML files in the openai_html directory
         for page in os.listdir(os.path.join(openai_html_path)):
             # Create a tuple of parameters to pass to the upload_openai_html function
-            upload_openai_html_params.append((self.env, self.brand, os.path.join(openai_html_path, page), page))
+            upload_openai_html_params.append((self.azure_env.stage, self.brand, os.path.join(openai_html_path, page), page))
 
         # Upload all OpenAI HTML documents in parallel using multiprocessing
         with multiprocessing.Pool(5) as p:
@@ -452,7 +469,7 @@ class CLO3D:
             p.join()
 
     def find_all_ai_search_documents(self):
-        results = self.environment.search_client.search(search_fields=["Source"], search_text="https://clo3d.com", search_mode="all")
+        results = self.azure_env.search_client.search(search_fields=["Source"], search_text="https://clo3d.com", search_mode="all")
 
         documents = []
         for r in results:
@@ -462,7 +479,7 @@ class CLO3D:
 
     def delete_ai_search_document(self, article_id):
         document = {"@search.action": "delete", "ArticleId": article_id}
-        self.environment.search_client.upload_documents([document])
+        self.azure_env.search_client.upload_documents([document])
 
     def delete_all_ai_search_documents(self):
         documents = self.find_all_ai_search_documents()
@@ -470,11 +487,13 @@ class CLO3D:
         for document in documents:
             document["@search.action"] = "delete"
             print("Deleting " + document["ArticleId"])
-            self.environment.search_client.upload_documents([document])
+            self.azure_env.search_client.upload_documents([document])
 
+
+web_scraper = CLO3D(AzureEnv("dev", "clo3d"))
 
 if __name__ == "__main__":
-    env = questionary.select("Which environment?", choices=["dev", "prod"]).ask()
+    stage = questionary.select("Which stage?", choices=["dev", "prod"]).ask()
     brand = questionary.select("Which brand?", choices=["allinone", "clo3d", "closet", "md"]).ask()
     task = questionary.select(
         "What task?",
@@ -492,83 +511,91 @@ if __name__ == "__main__":
         ],
     ).ask()
 
-    web_scraper = CLO3D(Environment(env, brand))
+    web_scraper = CLO3D(AzureEnv(stage, brand))
 
-    if task == "Scrape All URLs":
-        web_scraper.scrape_all_page_urls("https://clo3d.com")
+if task == "Scrape All URLs":
+    web_scraper.scrape_all_page_urls("https://clo3d.com")
 
-        if not os.path.exists(os.path.join(project_path, "websites", "clo3d.com")):
-            os.makedirs(os.path.join(project_path, "websites", "clo3d.com"), exist_ok=True)
+    if not os.path.exists(os.path.join(project_path, "websites", "clo3d.com")):
+        os.makedirs(os.path.join(project_path, "websites", "clo3d.com"), exist_ok=True)
 
-        with open(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt"), "w+") as f:
-            for url in urls:
-                f.write(url + "\n")
+    with open(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt"), "w+") as f:
+        for url in urls:
+            f.write(url + "\n")
 
-    elif task == "Scrape HTML Page":
-        urls = []
-        if os.path.exists(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt")):
-            with open(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt"), "r") as f:
-                urls = [url.strip() for url in f.readlines()]
+elif task == "Scrape HTML Page":
+    urls = []
+    if os.path.exists(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt")):
+        with open(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt"), "r") as f:
+            urls = [url.strip() for url in f.readlines()]
 
-        if len(urls) > 0:
-            url = questionary.select("Which URL?", choices=urls).ask()
-        else:
-            url = questionary.text("URL").ask()
+    if len(urls) > 0:
+        url = questionary.select("Which URL?", choices=urls).ask()
+    else:
+        url = questionary.text("URL").ask()
 
-        web_scraper.scrape_all_pages([url])
+    web_scraper.scrape_all_pages([url])
 
-    elif task == "Scrape All HTML Pages":
-        urls = []
-        if os.path.exists(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt")):
-            with open(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt"), "r") as f:
-                urls = [url.strip() for url in f.readlines()]
+elif task == "Scrape All HTML Pages":
+    email = questionary.text("Email").ask()
+    password = questionary.text("Password").ask()
 
-        web_scraper.scrape_all_pages(urls)
+    urls = []
+    if os.path.exists(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt")):
+        with open(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt"), "r") as f:
+            urls = [url.strip() for url in f.readlines()]
 
-        # Use pyppeteer to scrape web pages that have dynamic content
-        # asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/clo/download/installer"))
-        # asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/company/partners"))
-        # asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/clo/features", ".tab-titles"))
+    web_scraper.scrape_all_pages(urls)
 
-    elif task == "Generate OpenAI Document":
-        page = questionary.select(
-            "Which HTML page?",
-            choices=os.listdir(scraped_html_path),
-        ).ask()
+    # Use pyppeteer to scrape web pages that have dynamic content
+    asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/clo/download/installer"))
+    asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/company/partners"))
+    asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/clo/features", ".tab-titles"))
 
-        web_scraper.generate_openai_document(
-            Environment(env, brand),
-            brand,
-            page,
-        )
+    asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/accounts/account", email, password))
+    asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/accounts/billing", email, password))
+    asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/accounts/coupon", email, password))
+    asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/accounts/subscription", email, password))
 
-    elif task == "Generate All OpenAI Documents":
-        web_scraper.mp_generate_openai_documents()
+elif task == "Generate OpenAI Document":
+    page = questionary.select(
+        "Which HTML page?",
+        choices=os.listdir(scraped_html_path),
+    ).ask()
 
-    elif task == "Upload Document":
-        page = questionary.select(
-            "Which OpenAI page?",
-            choices=os.listdir(openai_html_path),
-        ).ask()
+    web_scraper.generate_openai_document(
+        stage,
+        brand,
+        page,
+    )
 
-        web_scraper.upload_document(
-            Environment(env, brand),
-            brand,
-            openai_html_path,
-            page,
-        )
+elif task == "Generate All OpenAI Documents":
+    web_scraper.mp_generate_openai_documents()
 
-    elif task == "Upload All Documents":
-        web_scraper.mp_upload_documents()
+elif task == "Upload Document":
+    page = questionary.select(
+        "Which OpenAI page?",
+        choices=os.listdir(openai_html_path),
+    ).ask()
 
-    elif task == "Delete AI Search Document":
-        article_id = questionary.text("Article ID?").ask()
-        web_scraper.delete_ai_search_document(article_id)
+    web_scraper.upload_document(
+        stage,
+        brand,
+        openai_html_path,
+        page,
+    )
 
-    elif task == "Delete All AI Search Documents":
-        web_scraper.delete_all_ai_search_documents()
+elif task == "Upload All Documents":
+    web_scraper.mp_upload_documents()
 
-    elif task == "Find All AI Search Documents":
-        documents = web_scraper.find_all_ai_search_documents()
-        for document in documents:
-            print(document["ArticleId"] + "\n" + document["Source"], "\n")
+elif task == "Delete AI Search Document":
+    article_id = questionary.text("Article ID?").ask()
+    web_scraper.delete_ai_search_document(article_id)
+
+elif task == "Delete All AI Search Documents":
+    web_scraper.delete_all_ai_search_documents()
+
+elif task == "Find All AI Search Documents":
+    documents = web_scraper.find_all_ai_search_documents()
+    for document in documents:
+        print(document["ArticleId"] + "\n" + document["Source"], "\n")

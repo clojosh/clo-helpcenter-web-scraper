@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup, NavigableString, Tag, element
 from pyppeteer import launch
 from requests_html import HTMLSession
 
-from tools.environment import Environment
+from tools.azureenv import AzureEnv
 
 urls = []
 project_path = os.path.dirname(os.path.abspath(__file__))
@@ -24,13 +24,12 @@ openai_html_path = os.path.join(project_path, "websites", "landing", "openai_htm
 
 
 class Landing:
-    def __init__(self, environment: Environment):
-        self.env = environment.env
-        self.environment = environment
-        self.brand = environment.brand
-        self.language = environment.language
-        self.search_client = environment.search_client
-        self.openai_helper = environment.openai_helper
+    def __init__(self, azure_env: AzureEnv):
+        self.azure_env = azure_env
+        self.brand = azure_env.brand
+        self.language = azure_env.language
+        self.search_client = azure_env.search_client
+        self.openai_helper = azure_env.openai_helper
 
     @staticmethod
     def reduce_tokens(scraped_content: str):
@@ -329,7 +328,7 @@ class Landing:
         await browser.close()
 
     @staticmethod
-    def generate_openai_document(env: Environment, brand: str, scraped_html_path: str, page: str):
+    def generate_openai_document(stage: str, brand: str, scraped_html_path: str, page: str):
         """
         Navigates and outlines a webpage using OpenAI's API.
         Args:
@@ -340,7 +339,7 @@ class Landing:
         Returns:
             None
         """
-        environment = Environment(env, brand)
+        azure_env = AzureEnv(stage, brand)
 
         print("Creating Navigation for " + page)
         with open(os.path.join(scraped_html_path, page), "r", encoding="utf-8") as f:
@@ -349,11 +348,11 @@ class Landing:
             url = "https://clo3d.com/" + page.replace(".html", "").replace("_", "/").replace("/userType", "?userType")
 
             try:
-                navigate = environment.openai_helper.scrape_webpage(scraped_content, url)
+                navigate = azure_env.openai_helper.scrape_webpage(scraped_content, url)
             except Exception as e:
                 print(e)
 
-            # outline = environment.openai_helper.outline_webpage(scraped_content, url)
+            # outline = azure_env.openai_helper.outline_webpage(scraped_content, url)
 
             if not os.path.exists(os.path.join(openai_html_path)):
                 os.makedirs(os.path.join(openai_html_path))
@@ -366,7 +365,7 @@ class Landing:
         navigate_html_openai_params = []
 
         for page in os.listdir(scraped_html_path):
-            navigate_html_openai_params.append((self.env, self.brand, project_path, page))
+            navigate_html_openai_params.append((self.azure_env.stage, self.brand, project_path, page))
 
         with multiprocessing.Pool(3) as p:
             p.starmap_async(Landing.generate_openai_document, navigate_html_openai_params, error_callback=lambda e: print(e))
@@ -374,25 +373,25 @@ class Landing:
             p.join()
 
     @staticmethod
-    def upload_document(env: Environment, brand: str, openai_html_path: str, page: str):
+    def upload_document(stage: str, brand: str, openai_html_path: str, page: str):
         """
         Uploads the OpenAI HTML to Azure Search.
 
         Args:
-            env (Environment): The environment in which the scraper is running.
+            stae (str): The stage in which the scraper is running.
             brand (str): The brand associated with the scraping task.
             openai_html_path (str): The path to the OpenAI HTML file.
             page (str): Name of the page to be uploaded.
         """
         print("Uploading " + page)
-        environment = Environment(env, brand)
+        azure_env = AzureEnv(stage, brand)
 
         with open(os.path.join(openai_html_path, page), "r", encoding="utf-8") as f:
             # Read the content of the OpenAI HTML file
             content = f.read()
 
             # Extract the title from the OpenAI HTML file
-            title = environment.openai_helper.create_webpage_title(content).replace('"', "").replace("*", "").replace("Title: ", "").replace("#", "")
+            title = azure_env.openai_helper.create_webpage_title(content).replace('"', "").replace("*", "").replace("Title: ", "").replace("#", "")
 
             # Create the Azure Search document
             document = {
@@ -405,11 +404,11 @@ class Landing:
             }
 
             # Generate the embeddings for the title and content
-            document["TitleVector"] = environment.openai_helper.generate_embeddings(title)
-            document["ContentVector"] = environment.openai_helper.generate_embeddings(content)
+            document["TitleVector"] = azure_env.openai_helper.generate_embeddings(title)
+            document["ContentVector"] = azure_env.openai_helper.generate_embeddings(content)
 
             # Upload the document to Azure Search
-            environment.search_client.upload_documents([document])
+            azure_env.search_client.upload_documents([document])
 
     def mp_upload_documents(self):
         """
@@ -422,7 +421,7 @@ class Landing:
         # Loop through all OpenAI HTML files in the openai_html directory
         for page in os.listdir(openai_html_path):
             # Create a tuple of parameters to pass to the upload_openai_html function
-            upload_openai_html_params.append((self.env, self.brand, os.path.join(openai_html_path, page), page))
+            upload_openai_html_params.append((self.azure_env.stage, self.brand, os.path.join(openai_html_path, page), page))
 
         # Upload all OpenAI HTML documents in parallel using multiprocessing
         with multiprocessing.Pool(5) as p:
@@ -431,7 +430,7 @@ class Landing:
             p.join()
 
     def find_all_ai_search_documents(self):
-        results = self.environment.search_client.search(
+        results = self.azure_env.search_client.search(
             search_fields=["Source"], search_text="https://landing.clo-set.com/allatonce", search_mode="all"
         )
 
@@ -443,7 +442,7 @@ class Landing:
 
     def delete_ai_search_document(self, article_id):
         document = {"@search.action": "delete", "ArticleId": article_id}
-        self.environment.search_client.upload_documents([document])
+        self.azure_env.search_client.upload_documents([document])
 
     def delete_all_ai_search_documents(self):
         documents = self.find_all_ai_search_documents()
@@ -451,11 +450,11 @@ class Landing:
         for document in documents:
             document["@search.action"] = "delete"
             print("Deleting " + document["ArticleId"])
-            self.environment.search_client.upload_documents([document])
+            self.azure_env.search_client.upload_documents([document])
 
 
 if __name__ == "__main__":
-    env = questionary.select("Which environment?", choices=["dev", "prod"]).ask()
+    stage = questionary.select("Which stage?", choices=["dev", "prod"]).ask()
     brand = questionary.select("Which brand?", choices=["allinone", "clo3d", "closet", "md"]).ask()
     task = questionary.select(
         "What task?",
@@ -473,7 +472,7 @@ if __name__ == "__main__":
         ],
     ).ask()
 
-    web_scraper = Landing(Environment(env, brand))
+    web_scraper = Landing(AzureEnv(stage, brand))
 
     if task == "Scrape All URLs":
         web_scraper.scrape_all_page_urls("https://landing.clo-set.com/allatonce")
@@ -513,7 +512,7 @@ if __name__ == "__main__":
         ).ask()
 
         web_scraper.generate_openai_document(
-            Environment(env, brand),
+            stage,
             brand,
             scraped_html_path,
             page,
@@ -528,7 +527,7 @@ if __name__ == "__main__":
         ).ask()
 
         web_scraper.upload_document(
-            Environment(env, brand),
+            stage,
             brand,
             openai_html_path,
             page,

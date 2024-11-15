@@ -10,7 +10,7 @@ from openai import AzureOpenAI
 from tools.openai_helper import OpenAIHelper
 
 
-class Environment:
+class AzureEnv:
     backend_dir = Path(__file__).parent.parent
     zendesk_article_api_endpoint = (
         "https://{0}.zendesk.com/api/v2/help_center/en-us/articles.json?page={1}&per_page=30&sort_by=updated_at&sort_order=desc"
@@ -19,12 +19,12 @@ class Environment:
     zendesk_article_category_api_endpoint = "https://{0}.zendesk.com/api/v2/help_center/en-us/categories/{1}.json"
     zendesk_article_attachment_api_endpoint = "https://support.{0}.com/api/v2/help_center/{1}/articles/{2}/attachments"
 
-    def __init__(self, env="dev", brand="", language="English"):
-        self.env = env
+    def __init__(self, stage: str, brand="", language="English"):
+        self.stage = stage
         self.brand = brand
         self.language = language
 
-        if self.env == "prod":
+        if self.stage == "prod":
             load_dotenv(os.path.join(self.backend_dir, ".env.prod"))
         else:
             load_dotenv(os.path.join(self.backend_dir, ".env.dev"))
