@@ -200,10 +200,15 @@ class CLO3D:
             .replace("<!--", "")
             .replace("-->", "")
             .replace(' href="/', ' href="https://clo3d.com/')
-            .replace("joshua.lee@clo3d.com", "[user email]")
             .replace("cd7a0ffabc84f4fe498b", "[user id]")
-            .replace("joshua.lee%40clo3d.com", "user_email")
+            .replace("joshua.lee@clo3d.com", "[user email]")
+            .replace("joshua.lee", "[user name]")
+            .replace("joshua.lee%40clo3d.com", "[user email]")
+            .replace("jlee7772@gmail.com", "[user email]")
+            .replace("jlee7772%40gmail.com", "[user email]")
+            .replace("jlee7772", "[user name]")
         )
+
         soup = self.remove_unnecessary_tags(html)
 
         if url == "https://clo3d.com/en/":
@@ -293,27 +298,8 @@ class CLO3D:
             with open(os.path.join(scraped_html_path, f"{file_name}.html"), "w+", encoding="utf-8") as f:
                 f.write("<html>\n" + content.prettify() + "\n" + "</html>")
 
-    async def pyppeteer_scraper(self, url: str, tag_selector: Optional[str] = None, email: str = "", password: str = "") -> None:
-        """
-        Uses Pyppeteer to load a webpage, wait for a specific tag to be visible, and then scrape the inner HTML of that tag.
-        The scraped HTML is then formatted and saved to a file.
-
-        Args:
-            url (str): The URL of the webpage to scrape.
-            tag_selector (str, optional): The CSS selector to wait for and scrape. Defaults to None.
-        """
-        browser = await launch(headless=True, defaultViewport=None, args=["--start-maximized"])
-        # browser = await launch(headless=True)
-        page = await browser.newPage()
-        await page.goto(url, {"waitUntil": "networkidle0"})
-
-        # Click the cookie consent button
-        await page.waitForSelector(".consent-footer button:nth-child(2)")
-        cookie = await page.querySelector(".consent-footer button:nth-child(2)")
-        await cookie.click()
-        await asyncio.sleep(5)
-
-        if email and password:
+    async def sign_in_button(self, page, email: str, password: str):
+        try:
             sign_in_button = await page.querySelector("#app > div > main > div > div:nth-child(2) > div > div > a")
             await sign_in_button.click()
             await asyncio.sleep(5)
@@ -327,28 +313,61 @@ class CLO3D:
             )
             await sign_in_button.click()
             await asyncio.sleep(5)
+        except Exception:
+            pass
 
-        # Wait for the tag and scrape the HTML
-        html_pages: List[str] = []
-        if tag_selector:
-            await page.waitForSelector(tag_selector)
-            click_tags = await page.querySelectorAll(tag_selector)
-            for tag in click_tags:
-                # Click the tag and wait for the page to load
-                await tag.click()
-                await asyncio.sleep(2)
-                # Scrape the HTML
+    async def cookie_consent(self, page):
+        try:
+            # Click the cookie consent button
+            await page.waitForSelector(".consent-footer button:nth-child(2)", timeout=2000)
+            cookie = await page.querySelector(".consent-footer button:nth-child(2)")
+            await cookie.click()
+            await asyncio.sleep(5)
+        except Exception:
+            pass
+
+    async def pyppeteer_scraper(self, urls: List[str], tag_selector: Optional[str] = None, email: str = "", password: str = "") -> None:
+        """
+        Uses Pyppeteer to load a webpage, wait for a specific tag to be visible, and then scrape the inner HTML of that tag.
+        The scraped HTML is then formatted and saved to a file.
+
+        Args:
+            url (List[str]): URLs of the webpage to scrape.
+            tag_selector (str, optional): The CSS selector to wait for and scrape. Defaults to None.
+        """
+        browser = await launch(headless=False, defaultViewport=None, args=["--start-maximized"])
+        # browser = await launch(headless=True)
+        page = await browser.newPage()
+
+        for url in urls:
+            await page.goto(url, {"waitUntil": "networkidle0"})
+
+            await self.cookie_consent(page)
+
+            if email and password:
+                await self.sign_in_button(page, email, password)
+
+            # Wait for the tag and scrape the HTML
+            html_pages: List[str] = []
+            if tag_selector:
+                await page.waitForSelector(tag_selector)
+                click_tags = await page.querySelectorAll(tag_selector)
+                for tag in click_tags:
+                    # Click the tag and wait for the page to load
+                    await tag.click()
+                    await asyncio.sleep(2)
+                    # Scrape the HTML
+                    html_pages.append(await page.content())
+            else:
                 html_pages.append(await page.content())
-        else:
-            html_pages.append(await page.content())
 
-        # Save the scraped HTML to a file
-        for i, page in enumerate(html_pages):
-            content = self.format_html(url, page)
+            # Save the scraped HTML to a file
+            for i, html_page in enumerate(html_pages):
+                content = self.format_html(url, html_page)
 
-            file_name = url.replace("https://clo3d.com/", "").replace("/", "_").replace("\n", "").replace("?", "_") + (f"_{i}" if i > 0 else "")
-            with open(os.path.join(scraped_html_path, f"{file_name}.html"), "w+", encoding="utf-8") as f:
-                f.write("<html>\n" + content.prettify() + "\n" + "</html>")
+                file_name = url.replace("https://clo3d.com/", "").replace("/", "_").replace("\n", "").replace("?", "_") + (f"_{i}" if i > 0 else "")
+                with open(os.path.join(scraped_html_path, f"{file_name}.html"), "w+", encoding="utf-8") as f:
+                    f.write("<html>\n" + content.prettify() + "\n" + "</html>")
 
         # Close the browser
         await browser.close()
@@ -469,7 +488,7 @@ class CLO3D:
             p.join()
 
     def find_all_ai_search_documents(self):
-        results = self.azure_env.search_client.search(search_fields=["Source"], search_text="https://clo3d.com", search_mode="all")
+        results = self.azure_env.search_client.search(search_fields=["Source"], search_text="https://clovf.zendesk.com", search_mode="all")
 
         documents = []
         for r in results:
@@ -540,27 +559,34 @@ elif task == "Scrape All HTML Pages":
     email = questionary.text("Email").ask()
     password = questionary.text("Password").ask()
 
-    urls = []
-    if os.path.exists(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt")):
-        with open(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt"), "r") as f:
-            urls = [url.strip() for url in f.readlines()]
+    # urls = []
+    # if os.path.exists(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt")):
+    #     with open(os.path.join(project_path, "websites", "clo3d.com", "scraped_urls.txt"), "r") as f:
+    #         urls = [url.strip() for url in f.readlines()]
 
-    web_scraper.scrape_all_pages(urls)
+    # web_scraper.scrape_all_pages(urls)
 
     # Use pyppeteer to scrape web pages that have dynamic content
-    asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/clo/download/installer"))
-    asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/company/partners"))
-    asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/clo/features", ".tab-titles"))
+    # asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper(["https://clo3d.com/en/clo/download/installer","https://clo3d.com/en/company/partners"]))
+    # asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/clo/features", ".tab-titles"))
 
-    asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/accounts/account", email, password))
-    asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/accounts/billing", email, password))
-    asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/accounts/coupon", email, password))
-    asyncio.get_event_loop().run_until_complete(web_scraper.pyppeteer_scraper("https://clo3d.com/en/accounts/subscription", email, password))
+    asyncio.get_event_loop().run_until_complete(
+        web_scraper.pyppeteer_scraper(
+            urls=[
+                "https://clo3d.com/en/accounts/account",
+                "https://clo3d.com/en/accounts/billing",
+                "https://clo3d.com/en/accounts/coupon",
+                "https://clo3d.com/en/accounts/subscription",
+            ],
+            email=email,
+            password=password,
+        )
+    )
 
 elif task == "Generate OpenAI Document":
     page = questionary.select(
         "Which HTML page?",
-        choices=os.listdir(scraped_html_path),
+        choices=sorted(os.listdir(scraped_html_path)),
     ).ask()
 
     web_scraper.generate_openai_document(
@@ -575,7 +601,7 @@ elif task == "Generate All OpenAI Documents":
 elif task == "Upload Document":
     page = questionary.select(
         "Which OpenAI page?",
-        choices=os.listdir(openai_html_path),
+        choices=sorted(os.listdir(openai_html_path)),
     ).ask()
 
     web_scraper.upload_document(
