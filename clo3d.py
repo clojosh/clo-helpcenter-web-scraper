@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup, NavigableString, Tag, element
 from pyppeteer import launch
 from requests_html import HTMLSession
 
-from tools.azureenv import AzureEnv
+from tools.azure_env import AzureEnv
 
 urls = []
 project_path = os.path.dirname(os.path.abspath(__file__))
@@ -488,7 +488,7 @@ class CLO3D:
             p.join()
 
     def find_all_ai_search_documents(self):
-        results = self.azure_env.search_client.search(search_fields=["Source"], search_text="https://clovf.zendesk.com", search_mode="all")
+        results = self.azure_env.search_client.search(search_fields=["Source"], search_text="clovf.zendesk.com", search_mode="any")
 
         documents = []
         for r in results:

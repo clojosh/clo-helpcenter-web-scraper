@@ -7,9 +7,10 @@ azure-core
 azure-identity
 azure-search-documents
 python-dotenv
+pyppeteer
 tenacity
 PyMuPDF
 tiktoken
-pyppeteer
+playwright
 requests-html # Change chromium version from here: https://stackoverflow.com/questions/78023508/python-request-html-is-not-downloading-chromium
 lxml-html-clean

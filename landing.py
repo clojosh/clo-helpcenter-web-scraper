@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup, NavigableString, Tag, element
 from pyppeteer import launch
 from requests_html import HTMLSession
 
-from tools.azureenv import AzureEnv
+from tools.azure_env import AzureEnv
 
 urls = []
 project_path = os.path.dirname(os.path.abspath(__file__))
