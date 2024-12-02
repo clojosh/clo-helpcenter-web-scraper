@@ -248,25 +248,24 @@ class CLOSET:
         """
         azure_env = AzureEnv(stage, brand)
 
-        print("Creating Navigation for " + page)
         with open(os.path.join(scraped_html_path, page), "r", encoding="utf-8") as f:
             scraped_content = CLOSET.reduce_tokens(f.read())
 
             url = "https://style.clo-set.com/" + page.replace(".html", "").replace("_", "/").replace("/userType", "?userType")
 
-            try:
-                navigate = azure_env.openai_helper.scrape_webpage(scraped_content, url)
-            except Exception as e:
-                print(e)
+            # try:
+            #     navigate = azure_env.openai_helper.scrape_webpage(scraped_content, url)
+            # except Exception as e:
+            #     print(e)
 
             outline = azure_env.openai_helper.outline_webpage(scraped_content, url)
-            outline = re.sub(r"<.*?>", "", scraped_content)
+            # outline = re.sub(r"<.*?>", "", scraped_content)
 
             if not os.path.exists(openai_html_path):
                 os.makedirs(openai_html_path)
 
             with open(os.path.join(openai_html_path, page.replace(".html", ".txt")), "w+", encoding="utf-8") as f:
-                f.write(navigate + "\n\n" + outline.replace("\n", " ").strip())
+                f.write(outline.replace("\n", " ").strip())
 
     def mp_generate_openai_documents(self):
         navigate_html_openai_params = []
@@ -306,7 +305,6 @@ class CLOSET:
                 .replace("#", "")
                 .strip()
             )
-            # title = "Guide to Features, Patch Notes, and Latest Bug Fixes"
 
             # Create the Azure Search document
             document = {
@@ -325,7 +323,7 @@ class CLOSET:
 
             # Upload the document to Azure Search
             azure_env.search_client.upload_documents([document])
-            print("Done" + page)
+            print("Uploaded: " + page)
 
     def mp_upload_documents(self):
         """
@@ -347,7 +345,7 @@ class CLOSET:
             p.join()
 
     def find_all_ai_search_documents(self):
-        results = self.azure_env.search_client.search(search_fields=["Source"], search_text="clovf.zendesk.com", search_mode="any")
+        results = self.azure_env.search_client.search(search_fields=["Source"], search_text="https://style.clo-set.com", search_mode="all")
 
         documents = []
         for r in results:
@@ -448,7 +446,6 @@ if __name__ == "__main__":
             web_scraper.upload_document(
                 stage,
                 brand,
-                openai_html_path,
                 page,
             )
 
