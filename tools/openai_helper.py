@@ -33,7 +33,7 @@ class OpenAIHelper:
         self.AZURE_OPENAI_EMB_DEPLOYMENT = AZURE_OPENAI_EMB_DEPLOYMENT
         self.language = language
 
-    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
+    @retry(wait=wait_random_exponential(multiplier=1, min=1, max=60), stop=stop_after_attempt(3))
     def generate_embeddings(self, text: str):
         tokens = num_tokens_from_string(text, "text-embedding-ada-002")
 
@@ -42,7 +42,7 @@ class OpenAIHelper:
 
         return self.openai_client.embeddings.create(input=[text], model=self.AZURE_OPENAI_EMB_DEPLOYMENT).data[0].embedding
 
-    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
+    @retry(wait=wait_random_exponential(multiplier=1, min=1, max=60), stop=stop_after_attempt(3))
     def outline_webpage(self, content, website_url):
         """Outline a Webpage"""
 
@@ -74,7 +74,7 @@ class OpenAIHelper:
             print("OpenAI Outline Webpage Error: ", e)
             return ""
 
-    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
+    @retry(wait=wait_random_exponential(multiplier=1, min=1, max=60), stop=stop_after_attempt(3))
     def scrape_webpage(self, content, website_url):
         """Scrape a Webpage"""
 
@@ -104,7 +104,7 @@ class OpenAIHelper:
             print("OpenAI Scrape Webpage Error: ", e)
             return ""
 
-    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
+    @retry(wait=wait_random_exponential(multiplier=1, min=1, max=60), stop=stop_after_attempt(3))
     def create_webpage_title(self, content) -> str:
         """Scrape a Webpage"""
 
@@ -113,7 +113,12 @@ class OpenAIHelper:
         if tokens >= GPT_4_MINI_MAX_INPUT_TOKENS:
             raise ValueError(f"Content too long, tokens found {tokens}")
 
-        messages = [{"role": "user", "content": f"Generate a title for a web page based on the following content: {content}"}]
+        messages = [
+            {
+                "role": "user",
+                "content": f"Generate a concise title for a website based on the following content. Do not use the word 'Navigate'. \n###Content###:\n{content}",
+            }
+        ]
 
         chat_completion = self.openai_client.chat.completions.create(
             model=self.AZURE_OPENAI_CHATGPT_DEPLOYMENT, messages=messages, temperature=0.7, max_tokens=GPT_4_MINI_MAX_OUTPUT_TOKENS, n=1
